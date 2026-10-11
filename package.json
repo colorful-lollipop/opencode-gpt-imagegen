@@ -66,12 +66,18 @@
     "url": "https://github.com/makcimbx/opencode-gpt-imagegen/issues"
   },
   "peerDependencies": {
-    "@opencode-ai/plugin": "^1.14.0"
+    "@opencode-ai/plugin": "^1.18.29"
+  },
+  "peerDependenciesMeta": {
+    "@opencode-ai/plugin": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.14",
     "@modelcontextprotocol/server": "^2.2.0",
     "@opencode-ai/plugin": "^1.18.33",
+    "@opencode/plugin": "^2.0.26",
     "@tsconfig/node22": "^22.0.6",
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2",

@@ -8,16 +8,22 @@ import type { ImageProvider, ImageProviderMode, OmniRouteAuth, OpenAIAuth } from
 const DEFAULT_OMNIROUTE_BASE_URL = "http://localhost:20128/v1"
 const DEFAULT_OMNIROUTE_MODEL = "codex/gpt-6.1-sol"
 
-// Mirrors OpenCode's auth resolution: OPENCODE_AUTH_CONTENT overrides $XDG_DATA_HOME/opencode/auth.json.
-// The Auth service is not exposed to external plugins, so this reproduces the rules directly.
+// V2 exposes resolved credentials through the plugin context instead of auth.json.
+export type AuthSources = {
+  openai?: () => Promise<OpenAIAuth | undefined>
+  omniroute?: () => Promise<{ key?: string; baseURL?: string } | undefined>
+}
+
+// Legacy OpenCode/MCP fallback: OPENCODE_AUTH_CONTENT overrides $XDG_DATA_HOME/opencode/auth.json.
 async function loadAuthData(): Promise<Record<string, unknown>> {
   if (process.env.OPENCODE_AUTH_CONTENT) {
     return JSON.parse(process.env.OPENCODE_AUTH_CONTENT) as Record<string, unknown>
   }
-  if (!xdgData) {
+  const dataHome = process.env.XDG_DATA_HOME ?? xdgData
+  if (!dataHome) {
     throw new Error("could not determine XDG data directory")
   }
-  const raw = await fs.readFile(path.join(xdgData, "opencode", "auth.json"), "utf-8")
+  const raw = await fs.readFile(path.join(dataHome, "opencode", "auth.json"), "utf-8")
   return JSON.parse(raw) as Record<string, unknown>
 }
 
@@ -98,6 +104,9 @@ async function loadOpenCodeConfig(): Promise<Record<string, unknown> | undefined
 }
 
 function getStandardOmniRouteOptions(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  const providers = isRecord(config?.providers) ? config.providers : undefined
+  const native = isRecord(providers?.omniroute) ? providers.omniroute : undefined
+  if (isRecord(native?.settings)) return native.settings
   const provider = isRecord(config?.provider) ? config.provider : undefined
   const omniroute = isRecord(provider?.omniroute) ? provider.omniroute : undefined
   return isRecord(omniroute?.options) ? omniroute.options : undefined
@@ -113,9 +122,10 @@ function hasOmniRouteMarker(value: unknown): boolean {
 }
 
 function getOmniRouteWrapperOptions(config: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
-  if (!Array.isArray(config?.plugin)) return undefined
+  const plugins = Array.isArray(config?.plugins) ? config.plugins : config?.plugin
+  if (!Array.isArray(plugins)) return undefined
 
-  for (const plugin of config.plugin) {
+  for (const plugin of plugins) {
     if (!hasOmniRouteMarker(plugin)) continue
 
     if (Array.isArray(plugin)) {
@@ -186,15 +196,19 @@ function isExpiredJwt(token: string): boolean {
 }
 
 // OpenCode's login wins over Codex CLI's; an expired token from either source is ignored.
-export async function loadOpenAIAuth(): Promise<OpenAIAuth | undefined> {
-  for (const load of [loadOpenCodeOpenAIAuth, loadCodexCliAuth]) {
+export async function loadOpenAIAuth(source?: AuthSources["openai"]): Promise<OpenAIAuth | undefined> {
+  const loaders = source
+    ? [source, loadOpenCodeOpenAIAuth, loadCodexCliAuth]
+    : [loadOpenCodeOpenAIAuth, loadCodexCliAuth]
+  for (const load of loaders) {
     const auth = await load().catch(() => undefined)
     if (auth && !isExpiredJwt(auth.access)) return auth
   }
   return undefined
 }
 
-export async function loadOmniRouteAuth(): Promise<OmniRouteAuth | undefined> {
+export async function loadOmniRouteAuth(source?: AuthSources["omniroute"]): Promise<OmniRouteAuth | undefined> {
+  const resolved = await source?.().catch(() => undefined)
   const authData = await loadAuthData().catch(() => undefined)
   const config = await loadOpenCodeConfig()
   const standardOptions = getStandardOmniRouteOptions(config)
@@ -203,6 +217,7 @@ export async function loadOmniRouteAuth(): Promise<OmniRouteAuth | undefined> {
   // Empty env values count as unset: Claude Code passes unconfigured plugin options to the MCP server as "".
   const key =
     stringValue(process.env.GPT_IMAGEGEN_OMNIROUTE_API_KEY) ??
+    stringValue(resolved?.key) ??
     getOmniRouteApiKeyFromAuth(authData) ??
     stringValue(standardOptions?.apiKey) ??
     stringValue(wrapperOptions?.apiKey)
@@ -210,6 +225,7 @@ export async function loadOmniRouteAuth(): Promise<OmniRouteAuth | undefined> {
 
   const baseURL = normalizeOmniRouteBaseURL(
     stringValue(process.env.GPT_IMAGEGEN_OMNIROUTE_BASE_URL) ??
+      stringValue(resolved?.baseURL) ??
       stringValue(standardOptions?.baseURL) ??
       stringValue(wrapperOptions?.baseURL) ??
       DEFAULT_OMNIROUTE_BASE_URL,
@@ -225,11 +241,11 @@ function getImageProviderMode(): ImageProviderMode {
   throw new Error("Invalid GPT_IMAGEGEN_AUTH_PROVIDER. Expected one of: auto, codex, omniroute.")
 }
 
-export async function resolveImageProvider(): Promise<ImageProvider> {
+export async function resolveImageProvider(sources: AuthSources = {}): Promise<ImageProvider> {
   const mode = getImageProviderMode()
 
   if (mode === "auto" || mode === "codex") {
-    const openai = await loadOpenAIAuth()
+    const openai = await loadOpenAIAuth(sources.openai)
     if (openai) return { kind: "codex", auth: openai }
     if (mode === "codex") {
       throw new Error(
@@ -238,7 +254,7 @@ export async function resolveImageProvider(): Promise<ImageProvider> {
     }
   }
 
-  const omniroute = await loadOmniRouteAuth()
+  const omniroute = await loadOmniRouteAuth(sources.omniroute)
   if (omniroute) return { kind: "omniroute", auth: omniroute }
   if (mode === "omniroute") {
     throw new Error("OmniRoute provider requested, but OmniRoute API credentials are not configured.")

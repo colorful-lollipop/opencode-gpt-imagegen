@@ -241,6 +241,40 @@ describe("loadOmniRouteAuth", () => {
     })
   })
 
+  test("reads native V2 provider settings before legacy provider options", async () => {
+    writeConfigFile(
+      JSON.stringify({
+        providers: { omniroute: { settings: { apiKey: "v2-key", baseURL: "https://v2.example" } } },
+        provider: { omniroute: { options: { apiKey: "v1-key", baseURL: "https://v1.example" } } },
+      }),
+    )
+    expect(await loadOmniRouteAuth()).toEqual({
+      type: "api",
+      key: "v2-key",
+      baseURL: "https://v2.example/v1",
+      model: "codex/gpt-6.1-sol",
+    })
+  })
+
+  test("reads native V2 wrapper package options", async () => {
+    writeConfigFile(
+      JSON.stringify({
+        plugins: [
+          {
+            package: "./plugins/omniroute-wrapper.ts",
+            options: { apiKey: "wrapper-key", baseURL: "https://v2.example" },
+          },
+        ],
+      }),
+    )
+    expect(await loadOmniRouteAuth()).toEqual({
+      type: "api",
+      key: "wrapper-key",
+      baseURL: "https://v2.example/v1",
+      model: "codex/gpt-6.1-sol",
+    })
+  })
+
   test("env base URL and model override config defaults", async () => {
     process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({ omniroute: { type: "api", key: "auth-key" } })
     process.env.GPT_IMAGEGEN_OMNIROUTE_BASE_URL = "https://env.example/api/v1"

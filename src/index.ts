@@ -1,8 +1,10 @@
 import type { Hooks, Plugin, PluginInput, PluginModule } from "@opencode-ai/plugin"
-import { tool } from "@opencode-ai/plugin"
 import { ARG_DESCRIPTIONS, generateImage, QUALITY_VALUES, TOOL_DESCRIPTION } from "./generate"
+import { GptImagePluginV2 } from "./opencode-v2"
 
 const GptImagePlugin: Plugin = async (_input: PluginInput): Promise<Hooks> => {
+  // V2 and MCP clients do not need the optional V1 SDK at runtime.
+  const { tool } = await import("@opencode-ai/plugin")
   return {
     tool: {
       gpt_imagegen: tool({
@@ -33,6 +35,6 @@ const GptImagePlugin: Plugin = async (_input: PluginInput): Promise<Hooks> => {
 }
 
 export default {
-  id: "opencode-gpt-imagegen",
+  ...GptImagePluginV2,
   server: GptImagePlugin,
 } satisfies PluginModule

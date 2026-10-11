@@ -1,4 +1,4 @@
-import { resolveImageProvider } from "./auth"
+import { type AuthSources, resolveImageProvider } from "./auth"
 import { callViaCodexResponses } from "./codex"
 import { readReferenceImages } from "./input-image"
 import { callViaOmniRoute } from "./omniroute"
@@ -26,8 +26,8 @@ export const ARG_DESCRIPTIONS = {
   images: "Optional reference image paths, relative to the project directory unless absolute.",
 }
 
-export async function generateImage(args: GenerateArgs, directory: string) {
-  const provider = await resolveImageProvider()
+export async function generateImage(args: GenerateArgs, directory: string, sources?: AuthSources) {
+  const provider = await resolveImageProvider(sources)
   const inputImageDataUrls = await readReferenceImages(args.images, directory)
   const base64 =
     provider.kind === "codex"
