@@ -1,6 +1,6 @@
 {
   "name": "gpt-imagegen",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Generate raster images through ChatGPT/Codex OAuth or OmniRoute, with reference images and non-overwriting PNG output.",
   "homepage": "https://github.com/makcimbx/opencode-gpt-imagegen#readme",
   "repository": "https://github.com/makcimbx/opencode-gpt-imagegen",
