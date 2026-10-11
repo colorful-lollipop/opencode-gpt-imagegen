@@ -60,6 +60,9 @@ jobs:
           node-version: "24"
           registry-url: "https://registry.npmjs.org"
       - run: bun install --frozen-lockfile
+      # npm validates bin paths before running prepublishOnly.
+      - name: Build publish artifacts
+        run: bun run build
       - name: Publish to npm
         run: |
           package_name="$(node -p "require('./package.json').name")"
