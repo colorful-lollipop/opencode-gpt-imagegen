@@ -1,6 +1,6 @@
 {
   "name": "@makcimbx/opencode-gpt-imagegen",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "OpenCode plugin and Claude Code MCP server for image generation through Codex OAuth or OmniRoute fallback, with reference images and safe PNG output.",
   "type": "module",
   "main": "./dist/index.js",
