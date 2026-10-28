@@ -76,6 +76,42 @@ function jwtExpiringIn(seconds: number): string {
   return `e30.${payload}.sig`
 }
 
+function jwtWith(payload: Record<string, unknown>, secondsFromNow = 3600): string {
+  const combined = { exp: Math.floor(Date.now() / 1000) + secondsFromNow, ...payload }
+  const body = Buffer.from(JSON.stringify(combined)).toString("base64url")
+  return `e30.${body}.sig`
+}
+
+// Mimics the OpenCode V2 "chatgpt-token-sharing" credential: a JWT whose
+// `https://api.openai.com/auth` claim lacks `chatgpt_account_id`.
+function tokenSharingJwt(secondsFromNow = 3600): string {
+  return jwtWith(
+    {
+      aud: "https://api.openai.com/v1",
+      client_id: "oaiapp_token_sharing",
+      scope: "chatgpt.tokens.use.direct openid profile",
+      "https://api.openai.com/auth": { per_user_salt: "salt", encrypted_auth_metadata: "enc" },
+    },
+    secondsFromNow,
+  )
+}
+
+// Mimics the Codex CLI login: a JWT whose auth claim carries `chatgpt_account_id`.
+function codexCliJwt(secondsFromNow = 3600): string {
+  return jwtWith(
+    {
+      aud: ["https://api.openai.com/v1"],
+      client_id: "codex_cli",
+      "https://api.openai.com/auth": {
+        chatgpt_account_id: "acct-chatgpt",
+        chatgpt_plan_type: "prolite",
+        chatgpt_user_id: "user-x",
+      },
+    },
+    secondsFromNow,
+  )
+}
+
 beforeEach(() => {
   delete process.env.OPENCODE_AUTH_CONTENT
   delete process.env.GPT_IMAGEGEN_AUTH_PROVIDER
@@ -163,6 +199,32 @@ describe("loadOpenAIAuth", () => {
     writeAuthFile(JSON.stringify({ openai: { type: "oauth", access: jwtExpiringIn(-60) } }))
     writeCodexAuthFile({ access_token: jwtExpiringIn(-60) })
     expect(await loadOpenAIAuth()).toBeUndefined()
+  })
+
+  test("accepts a Codex-style JWT that carries chatgpt_account_id", async () => {
+    const access = codexCliJwt()
+    process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({ openai: { type: "oauth", access } })
+    expect(await loadOpenAIAuth()).toEqual({ type: "oauth", access })
+  })
+
+  test("skips an OpenCode token-sharing credential instead of sending it to Codex", async () => {
+    process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({ openai: { type: "oauth", access: tokenSharingJwt() } })
+    expect(await loadOpenAIAuth()).toBeUndefined()
+  })
+
+  test("falls back to the Codex CLI login when OpenCode only has a token-sharing credential", async () => {
+    const access = codexCliJwt()
+    writeAuthFile(JSON.stringify({ openai: { type: "oauth", access: tokenSharingJwt() } }))
+    writeCodexAuthFile({ access_token: access, account_id: "acct-codex" })
+    expect(await loadOpenAIAuth()).toEqual({ type: "oauth", access, accountId: "acct-codex" })
+  })
+
+  test("keeps an explicit accountId even when the JWT claim looks like token sharing", async () => {
+    const access = tokenSharingJwt()
+    process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({
+      openai: { type: "oauth", access, accountId: "acct-explicit" },
+    })
+    expect(await loadOpenAIAuth()).toEqual({ type: "oauth", access, accountId: "acct-explicit" })
   })
 })
 
@@ -348,5 +410,25 @@ describe("resolveImageProvider", () => {
     expect(resolveImageProvider()).rejects.toThrow(
       "Invalid GPT_IMAGEGEN_AUTH_PROVIDER. Expected one of: auto, codex, omniroute.",
     )
+  })
+
+  test("auto skips a token-sharing credential and falls back to OmniRoute", async () => {
+    process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({
+      openai: { type: "oauth", access: tokenSharingJwt() },
+      omniroute: { type: "api", key: "omni-key" },
+    })
+
+    expect(await resolveImageProvider()).toEqual({
+      kind: "omniroute",
+      auth: { type: "api", key: "omni-key", baseURL: "http://localhost:20128/v1", model: "codex/gpt-6.1-sol" },
+    })
+  })
+
+  test("auto uses the Codex CLI login when OpenCode only has a token-sharing credential", async () => {
+    const access = codexCliJwt()
+    process.env.OPENCODE_AUTH_CONTENT = JSON.stringify({ openai: { type: "oauth", access: tokenSharingJwt() } })
+    writeCodexAuthFile({ access_token: access })
+
+    expect(await resolveImageProvider()).toEqual({ kind: "codex", auth: { type: "oauth", access } })
   })
 })

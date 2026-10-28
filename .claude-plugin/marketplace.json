@@ -1,17 +1,17 @@
 {
-  "name": "makcimbx",
+  "name": "colorful-lollipop",
   "owner": {
-    "name": "makcimbx"
+    "name": "colorful-lollipop"
   },
   "metadata": {
-    "description": "Claude Code plugins by makcimbx."
+    "description": "Claude Code plugins by colorful-lollipop."
   },
   "plugins": [
     {
       "name": "gpt-imagegen",
       "source": {
         "source": "npm",
-        "package": "@makcimbx/opencode-gpt-imagegen"
+        "package": "@colorful-lollipop/opencode-gpt-imagegen"
       },
       "description": "Generate raster images through ChatGPT/Codex OAuth or OmniRoute, with reference images and non-overwriting PNG output."
     }

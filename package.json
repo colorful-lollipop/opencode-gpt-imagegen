@@ -1,7 +1,7 @@
 {
-  "name": "@makcimbx/opencode-gpt-imagegen",
-  "version": "0.3.1",
-  "description": "OpenCode plugin and Claude Code MCP server for image generation through Codex OAuth or OmniRoute fallback, with reference images and safe PNG output.",
+  "name": "@colorful-lollipop/opencode-gpt-imagegen",
+  "version": "0.3.2",
+  "description": "OpenCode plugin and Claude Code MCP server for image generation through Codex OAuth or OmniRoute fallback, with reference images and safe PNG output. Fork that fixes OpenCode V2 token-sharing credential handling.",
   "type": "module",
   "main": "./dist/index.js",
   "bin": {
@@ -59,11 +59,11 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/makcimbx/opencode-gpt-imagegen.git"
+    "url": "git+https://github.com/colorful-lollipop/opencode-gpt-imagegen.git"
   },
-  "homepage": "https://github.com/makcimbx/opencode-gpt-imagegen#readme",
+  "homepage": "https://github.com/colorful-lollipop/opencode-gpt-imagegen#readme",
   "bugs": {
-    "url": "https://github.com/makcimbx/opencode-gpt-imagegen/issues"
+    "url": "https://github.com/colorful-lollipop/opencode-gpt-imagegen/issues"
   },
   "peerDependencies": {
     "@opencode-ai/plugin": "^1.18.29"

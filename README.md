@@ -1,13 +1,22 @@
-# @makcimbx/opencode-gpt-imagegen
+# @colorful-lollipop/opencode-gpt-imagegen
 
 <p align="center"><img src="./ogp.png" alt="opencode-gpt-imagegen" /></p>
 
 > Bring **image generation** to [OpenCode](https://opencode.ai) and [Claude Code](https://claude.com/claude-code). It uses your **ChatGPT/Codex OAuth** path first and can fall back to **OmniRoute** when Codex auth is unavailable.
 
+Fork of [`makcimbx/opencode-gpt-imagegen`](https://github.com/makcimbx/opencode-gpt-imagegen), which is itself a fork of [`yuji-hatakeyama/opencode-gpt-imagegen`](https://github.com/yuji-hatakeyama/opencode-gpt-imagegen).
+
 [![OpenCode plugin](https://img.shields.io/badge/OpenCode-plugin-blue.svg)](https://opencode.ai/docs/plugins/)
-[![npm version](https://img.shields.io/npm/v/@makcimbx/opencode-gpt-imagegen.svg)](https://www.npmjs.com/package/@makcimbx/opencode-gpt-imagegen)
-[![CI](https://github.com/makcimbx/opencode-gpt-imagegen/actions/workflows/ci.yml/badge.svg)](https://github.com/makcimbx/opencode-gpt-imagegen/actions/workflows/ci.yml)
+[![CI](https://github.com/colorful-lollipop/opencode-gpt-imagegen/actions/workflows/ci.yml/badge.svg)](https://github.com/colorful-lollipop/opencode-gpt-imagegen/actions/workflows/ci.yml)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
+## What this fork changes
+
+- **Fixes OpenCode V2 auth resolution.** OpenCode V2 stores ChatGPT credentials issued by the `chatgpt-token-sharing` method. Those tokens carry a `https://api.openai.com/auth` claim *without* `chatgpt_account_id`, and the Codex image backend rejects them with `401 rejected_by_access_enforcement / no_matching_rule`. Previously the plugin accepted any resolved OAuth credential, so it always sent that token and every generation failed — re-signing in did not help, because the new credential had the same shape.
+- Now such credentials are skipped during resolution, and the plugin falls back to the Codex CLI login (`$CODEX_HOME/auth.json`, default `~/.codex/auth.json`), which the backend accepts. Expiry handling is unchanged, and opaque tokens or tokens without the ChatGPT auth claim keep their previous behavior.
+- Error messages now name the cause instead of reporting only "no credentials found".
+- Covered by new unit tests (`tests/unit/auth.test.ts`).
+
 
 | Auth path | Status | Billing |
 |---|---|---|
@@ -28,48 +37,56 @@
 
 Supports **OpenCode 2.x** and **OpenCode 1.18.29+** from the same package.
 
-For **OpenCode 2**, add this plugin to `plugins` in `opencode.json`:
+For **OpenCode 2**, add this plugin to `plugins` in `opencode.json`. This fork is not published to npm yet, so point OpenCode at the built directory:
+
+```sh
+git clone https://github.com/colorful-lollipop/opencode-gpt-imagegen
+cd opencode-gpt-imagegen
+bun install --frozen-lockfile && bun run build
+```
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugins": ["@makcimbx/opencode-gpt-imagegen"]
+  "plugins": ["/absolute/path/to/opencode-gpt-imagegen"]
 }
 ```
 
-For **OpenCode 1.18.29+**, use the singular `plugin` field:
+After publishing under your own npm scope (`bun run build && npm publish --access public`), the package name works the same way:
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@makcimbx/opencode-gpt-imagegen"]
+  "plugins": ["@colorful-lollipop/opencode-gpt-imagegen"]
 }
 ```
 
-OpenCode auto-installs the package on next launch — no separate `npm install` step is needed. Restart OpenCode after adding or updating the plugin. The plugin works best when OpenCode is authenticated with ChatGPT/Codex OAuth, and can also use OmniRoute credentials already stored in OpenCode.
+For **OpenCode 1.18.29+**, use the singular `plugin` field with the same entry.
 
-In OpenCode 2, the plugin registers `gpt_imagegen` through the native tool API and reads active credentials through the integration API on each invocation. OpenCode manages credential resolution and refresh. Output and reference paths follow the current session directory, including sessions moved to another worktree.
+`dist/` is a build artifact and is not committed, so a directory install needs the `bun run build` step above. OpenCode reloads plugins from watched config directories; restart OpenCode after rebuilding. The plugin works best when Codex CLI is logged in with ChatGPT, and can also use OmniRoute credentials already stored in OpenCode.
+
+In OpenCode 2, the plugin registers `gpt_imagegen` through the native tool API and reads active credentials through the integration API on each invocation. Credentials the Codex image backend rejects are skipped in favor of the Codex CLI login (see [Auth Selection](#auth-selection)). Output and reference paths follow the current session directory, including sessions moved to another worktree.
 
 ### Claude Code
 
-The repository is also a Claude Code plugin marketplace. Inside Claude Code run:
+The repository is also a Claude Code plugin marketplace pointing at this fork:
 
 ```
-/plugin marketplace add makcimbx/opencode-gpt-imagegen
-/plugin install gpt-imagegen@makcimbx
+/plugin marketplace add colorful-lollipop/opencode-gpt-imagegen
+/plugin install gpt-imagegen@colorful-lollipop
 ```
 
 Claude Code fetches the plugin from npm and starts the self-contained `dist/mcp.js` MCP server with Node.js, so no extra install step is needed. Output and reference image paths are resolved relative to the project directory. Credentials come from the same places as in OpenCode, plus the Codex CLI login (see [Auth Selection](#auth-selection)); environment variables below can be set in your shell or in the `env` block of Claude Code's `settings.json`.
 
-When the plugin is enabled, Claude Code asks for two optional settings: the **OmniRoute base URL** and the **OmniRoute API key** (stored in the system credential store). They are used whenever ChatGPT OAuth is missing or expired, so image generation keeps working without OpenCode or Codex CLI. Change them later with `/plugin configure gpt-imagegen@makcimbx` or `claude plugin configure gpt-imagegen@makcimbx`. Left empty, they fall back to OpenCode's OmniRoute config; because the plugin always passes these two values to its server, set `GPT_IMAGEGEN_OMNIROUTE_BASE_URL` / `GPT_IMAGEGEN_OMNIROUTE_API_KEY` through the plugin options rather than the environment.
+When the plugin is enabled, Claude Code asks for two optional settings: the **OmniRoute base URL** and the **OmniRoute API key** (stored in the system credential store). They are used whenever ChatGPT OAuth is missing or expired, so image generation keeps working without OpenCode or Codex CLI. Change them later with `/plugin configure gpt-imagegen@colorful-lollipop` or `claude plugin configure gpt-imagegen@colorful-lollipop`. Left empty, they fall back to OpenCode's OmniRoute config; because the plugin always passes these two values to its server, set `GPT_IMAGEGEN_OMNIROUTE_BASE_URL` / `GPT_IMAGEGEN_OMNIROUTE_API_KEY` through the plugin options rather than the environment.
 
-Other MCP clients can start the same stdio server with `npx -y @makcimbx/opencode-gpt-imagegen`.
+Other MCP clients can start the same stdio server with `npx -y @colorful-lollipop/opencode-gpt-imagegen`.
 
 ## Auth Selection
 
 Default behavior is `auto`:
 
-1. In OpenCode 2, resolve the active `openai` integration credential first. Otherwise use Codex OAuth from OpenCode 1's `openai` auth entry, then the Codex CLI login (`$CODEX_HOME/auth.json`, default `~/.codex/auth.json`). Expired access tokens are skipped. The plugin never refreshes or rewrites login files itself; for file-based credentials, start OpenCode or Codex CLI to refresh expired tokens.
+1. In OpenCode 2, resolve the active `openai` integration credential first. Otherwise use Codex OAuth from OpenCode 1's `openai` auth entry, then the Codex CLI login (`$CODEX_HOME/auth.json`, default `~/.codex/auth.json`). Expired access tokens are skipped, and so are credentials the Codex image backend cannot use: OpenCode 2 stores ChatGPT credentials issued by the `chatgpt-token-sharing` method, whose `https://api.openai.com/auth` claim has no `chatgpt_account_id`, and the backend answers those with `401 rejected_by_access_enforcement / no_matching_rule`. Such tokens are skipped so the Codex CLI login is used instead; keep `codex login` valid for this path. The plugin never refreshes or rewrites login files itself; for file-based credentials, start OpenCode or Codex CLI to refresh expired tokens.
 2. Otherwise fall back to OmniRoute API auth from `GPT_IMAGEGEN_OMNIROUTE_API_KEY` (the Claude Code plugin option), OpenCode 2's active `omniroute` integration, OpenCode 1's `omniroute` auth entry, or provider configuration.
 
 Force a provider for debugging:

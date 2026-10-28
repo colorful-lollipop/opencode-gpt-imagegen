@@ -195,14 +195,44 @@ function isExpiredJwt(token: string): boolean {
   }
 }
 
-// OpenCode's login wins over Codex CLI's; an expired token from either source is ignored.
+function decodeJwtPayload(token: string): Record<string, unknown> | undefined {
+  const segments = token.split(".")
+  if (segments.length !== 3) return undefined
+  try {
+    const payload = JSON.parse(Buffer.from(segments[1] ?? "", "base64url").toString("utf-8")) as unknown
+    return isRecord(payload) ? payload : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// OpenCode V2 exposes ChatGPT "token sharing" credentials (method `chatgpt-token-sharing`)
+// through the plugin context. Those tokens carry a `https://api.openai.com/auth` claim
+// without `chatgpt_account_id`, and the Codex backend rejects them with
+// 401 `rejected_by_access_enforcement / no_matching_rule`, so they must be skipped in favor
+// of the Codex CLI login instead of being sent and failing the whole request.
+function isCodexCapableOAuth(auth: OpenAIAuth): boolean {
+  if (auth.accountId) return true
+
+  const payload = decodeJwtPayload(auth.access)
+  // Opaque or unparseable credentials are left to the backend, as before.
+  if (!payload) return true
+
+  const authClaim = payload["https://api.openai.com/auth"]
+  // Tokens without the ChatGPT auth claim (older shapes, fixtures) are not judged here.
+  if (!isRecord(authClaim)) return true
+
+  return stringValue(authClaim.chatgpt_account_id) !== undefined
+}
+
+// OpenCode's login wins over Codex CLI's; expired or non-Codex-capable credentials are skipped.
 export async function loadOpenAIAuth(source?: AuthSources["openai"]): Promise<OpenAIAuth | undefined> {
   const loaders = source
     ? [source, loadOpenCodeOpenAIAuth, loadCodexCliAuth]
     : [loadOpenCodeOpenAIAuth, loadCodexCliAuth]
   for (const load of loaders) {
     const auth = await load().catch(() => undefined)
-    if (auth && !isExpiredJwt(auth.access)) return auth
+    if (auth && !isExpiredJwt(auth.access) && isCodexCapableOAuth(auth)) return auth
   }
   return undefined
 }
@@ -249,7 +279,8 @@ export async function resolveImageProvider(sources: AuthSources = {}): Promise<I
     if (openai) return { kind: "codex", auth: openai }
     if (mode === "codex") {
       throw new Error(
-        "Codex provider requested, but no unexpired ChatGPT OAuth credentials were found in OpenCode or Codex CLI auth.",
+        "Codex provider requested, but no unexpired ChatGPT OAuth credentials were found in OpenCode or Codex CLI auth. " +
+          "OpenCode V2 token-sharing credentials cannot call the Codex image backend; run `codex login` to provide a usable token.",
       )
     }
   }
@@ -261,6 +292,7 @@ export async function resolveImageProvider(sources: AuthSources = {}): Promise<I
   }
 
   throw new Error(
-    "No image provider credentials configured. Sign in with ChatGPT in OpenCode or Codex CLI (running either one refreshes an expired token), or configure OmniRoute API credentials.",
+    "No image provider credentials configured. Sign in with ChatGPT in OpenCode or Codex CLI (running either one refreshes an expired token), or configure OmniRoute API credentials. " +
+      "If OpenCode is already signed in on V2, note that its token-sharing credential cannot call the Codex image backend; run `codex login` to add a usable token.",
   )
 }
